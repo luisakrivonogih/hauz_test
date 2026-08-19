@@ -15,6 +15,12 @@ export default [
     },
   },
   {
-    ignores: ['eslint.config.js', 'prettier.config.js'],
+    ignores: [
+      'eslint.config.js',
+      'prettier.config.js',
+      // Not part of the function's own tsconfig (which builds only src/**
+      // with rootDir: "src" — adding this would break `tsc`'s output layout).
+      'functions/register-personal-account/vitest.config.ts',
+    ],
   },
 ]

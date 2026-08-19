@@ -59,6 +59,27 @@ The app runs at `http://localhost:3000`.
 
 Other scripts: `npm run build`, `npm run lint`, `npm run format`, `npm run check`.
 
+## Testing
+
+The task spec marks tests as not required, but a Vitest suite is included covering the pieces where it matters most: business logic, not framework glue.
+
+```bash
+npm test                                              # app: 47 tests
+cd functions/register-personal-account && npm test    # Function: 26 tests
+```
+
+What's covered:
+
+- `src/lib/validation.ts`, `src/lib/result.ts`, `src/types/hauz.ts` — pure schema/helper logic.
+- `src/server/auth-state.ts` — the 4-state auth/registration state machine, with a mocked Appwrite client.
+- `src/server/auth-actions.ts` — every registration/login/logout/verify/finish-registration action, including the conflict, invalid-credentials, expired-link, and partial-failure-recovery paths from the Phase 5 edge-case walkthrough in `NOTES.md`.
+- `functions/register-personal-account/src/register.ts` — `completeRegistration`'s full branch coverage: fresh chain with/without the Transactions API, transaction rollback, manual reverse-order compensation, idempotent already-registered detection, resuming an interrupted chain, and the expanded-relationship-object defensive handling.
+- `functions/register-personal-account/src/main.ts` and `validation.ts` — the Function's HTTP-shaped entrypoint (status code mapping, malformed JSON, missing auth context) and input validation.
+
+**Why the auth business logic lives in `src/server/auth-actions.ts` instead of directly in `src/server-fns/auth.ts`**: `createServerFn`-wrapped handlers need a request-scoped context (an `AsyncLocalStorage` TanStack Start's real server runtime sets up) that doesn't exist when a test calls them directly — attempting to unit-test them errors with "No Start context found." `src/server-fns/auth.ts` is now a thin pass-through layer; the actual logic in `auth-actions.ts` is plain functions, directly testable the same way the Function's `register.ts` already was designed to be.
+
+**Not covered**: `scripts/setup-schema.ts` (thin, repetitive Appwrite API orchestration — the calls themselves were verified against the installed SDK's type definitions instead) and React components (no component-level rendering tests; the routes were smoke-tested manually against a running dev server instead, per the state-machine walkthrough in `NOTES.md`).
+
 ## Schema setup script
 
 `scripts/setup-schema.ts` creates the database, all 4 tables (with the exact columns, types, indexes, and index names from the PDF), and seeds the `personal_roles` rows — idempotently, so re-running it is safe (it checks what already exists before creating anything). Run it with:
