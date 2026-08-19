@@ -21,7 +21,7 @@ export interface AppwriteRowMeta {
   $id: string
   $createdAt: string
   $updatedAt: string
-  $sequence: number
+  $sequence: string
   $databaseId: string
   $tableId: string
   $permissions: string[]
