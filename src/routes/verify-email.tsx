@@ -20,7 +20,7 @@ export const Route = createFileRoute('/verify-email')({
       return { message: result.kind === 'validation' ? (result.message ?? 'Verification failed.') : result.message }
     }
 
-    throw redirect({ to: '/' })
+    throw redirect({ to: result.data.hasSession ? '/' : '/login' })
   },
   component: VerifyEmailPage,
 })

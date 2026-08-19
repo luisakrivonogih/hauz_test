@@ -43,22 +43,26 @@ export const registerFn = createServerFn({ method: 'POST' })
       return externalError('Failed to create account. Please try again.')
     }
 
-    let sessionSecret: string
     try {
       const session = await account.createEmailPasswordSession({
         email: data.email,
         password: data.password,
       })
-      sessionSecret = session.secret
-      client.setSession(sessionSecret)
+      client.setSession(session.secret)
+      // Set the cookie the moment a session exists: everything past this
+      // point is best-effort, and the next screen (unverified, with a
+      // resend button) is the recovery path if any of it fails — leaving
+      // the user on this form with no session would be a dead end instead,
+      // since re-submitting would now hit the "email already exists" case.
+      writeSessionSecret(session.secret)
     } catch {
       // Account was created but we couldn't start a session for it. The user
       // can still finish via the login screen — the Auth user already exists.
       return externalError('Account created, but signing you in failed. Please log in.')
     }
 
-    try {
-      await account.updatePrefs<HauzUserPrefs>({
+    await account
+      .updatePrefs<HauzUserPrefs>({
         prefs: {
           firstName: data.firstName,
           lastName: data.lastName,
@@ -66,15 +70,10 @@ export const registerFn = createServerFn({ method: 'POST' })
           contactPhone: data.contactPhone ?? null,
         },
       })
-      await account.createVerification({ url: `${env.VITE_APP_URL}/verify-email` })
-    } catch {
-      writeSessionSecret(sessionSecret)
-      return externalError(
-        'Account created, but sending the verification email failed. Use "resend" on the next screen.',
-      )
-    }
+      .catch(() => undefined)
 
-    writeSessionSecret(sessionSecret)
+    await account.createVerification({ url: `${env.VITE_APP_URL}/verify-email` }).catch(() => undefined)
+
     return ok({ email: data.email })
   })
 
@@ -102,11 +101,16 @@ export const verifyEmailFn = createServerFn({ method: 'POST' })
     }
     return { userId: input.userId, secret: input.secret }
   })
-  .handler(async ({ data }): Promise<ActionResult<null>> => {
+  .handler(async ({ data }): Promise<ActionResult<{ hasSession: boolean }>> => {
     const { account } = createSessionAppwriteClient()
     try {
       await account.updateVerification({ userId: data.userId, secret: data.secret })
-      return ok(null)
+      // The link may be opened on a different device/browser than the one
+      // that registered — only redirect into the session-resolving `/`
+      // dispatcher if this browser actually has our cookie; otherwise send
+      // them to log in, rather than bouncing through /register's
+      // already-exists conflict first.
+      return ok({ hasSession: Boolean(readSessionSecret()) })
     } catch (error) {
       if (isUnauthorized(error)) {
         return validationError([], 'This verification link is invalid or has expired.')
