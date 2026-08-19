@@ -2,6 +2,9 @@
   "name": "hauz-app",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "imports": {
     "#/*": "./src/*"
   },
@@ -12,7 +15,8 @@
     "preview": "vite preview",
     "lint": "eslint",
     "format": "prettier --write . && eslint --fix",
-    "check": "prettier --check ."
+    "check": "prettier --check .",
+    "setup:schema": "node --env-file=.env scripts/setup-schema.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
