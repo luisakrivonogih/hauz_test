@@ -17,7 +17,8 @@
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
     "setup:schema": "node --env-file=.env scripts/setup-schema.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:live": "node --env-file=.env node_modules/.bin/vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

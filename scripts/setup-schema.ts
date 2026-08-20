@@ -51,6 +51,26 @@ function isAlreadyExists(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 409
 }
 
+/**
+ * Unlike tables/columns (which signal "already exists" via a plain 409),
+ * Appwrite 1.9.6 signals a duplicate index via `code: 400,
+ * type: 'column_index_invalid'` — indistinguishable from a genuinely invalid
+ * index request except by message text, so match on that specifically
+ * rather than swallowing every `column_index_invalid` error.
+ */
+function isIndexAlreadyExists(error: unknown): boolean {
+  if (isAlreadyExists(error)) return true
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'type' in error &&
+    error.type === 'column_index_invalid' &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    error.message.includes('already an index with the same attributes')
+  )
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -184,7 +204,7 @@ async function ensureIndex(
     await tablesDB.createIndex({ databaseId: DATABASE_ID, tableId, key, type, columns })
     console.log(`[index] created ${tableId}.${key}`)
   } catch (error) {
-    if (!isAlreadyExists(error)) throw error
+    if (!isIndexAlreadyExists(error)) throw error
     console.log(`[index] ${tableId}.${key} already exists`)
   }
   await waitForIndex(tableId, key)
@@ -244,20 +264,11 @@ async function main(): Promise<void> {
     'appwrite_user_id',
     'revoked_at',
   ])
-  await ensureIndex(GRANTS, 'ix_grants_account_history', TablesDBIndexType.Key, [
-    'account_id',
-    'revoked_at',
-  ])
-  await ensureIndex(GRANTS, 'ix_grants_user_account', TablesDBIndexType.Key, [
-    'appwrite_user_id',
-    'account_id',
-    'revoked_at',
-  ])
+  // No index on `account_id`/`role_id` (relationship columns): Appwrite
+  // 1.9.6 rejects createIndex for relationship columns with
+  // `column_type_invalid` — it maintains its own internal index for them,
+  // which Query.equal on those columns already benefits from.
 
-  await ensureIndex(PERSONAL_ACCOUNTS, 'uq_personal_account', TablesDBIndexType.Unique, [
-    'account_id',
-  ])
-  await ensureIndex(PERSONAL_ACCOUNTS, 'ix_personal_role', TablesDBIndexType.Key, ['role_id'])
   await ensureIndex(PERSONAL_ACCOUNTS, 'ix_personal_contact_phone', TablesDBIndexType.Key, [
     'contact_phone',
   ])

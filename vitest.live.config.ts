@@ -4,7 +4,8 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
-    exclude: ['src/**/*.live.test.ts'],
+    include: ['src/**/*.live.test.ts'],
+    // Network calls to a real Appwrite project; runs serially, no retries.
+    fileParallelism: false,
   },
 })

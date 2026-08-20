@@ -32,7 +32,9 @@ export async function authStateAction(): Promise<AuthState> {
 
 export async function registerAction(data: RegistrationFormValues): Promise<ActionResult<{ email: string }>> {
   const env = getServerEnv()
-  const { client, account } = createSessionAppwriteClient()
+  // API key only so createEmailPasswordSession returns a real secret (see
+  // src/env/server.ts) — account.create itself doesn't need it.
+  const { account } = createSessionAppwriteClient(undefined, env.APPWRITE_API_KEY)
 
   try {
     await account.create({
@@ -45,28 +47,35 @@ export async function registerAction(data: RegistrationFormValues): Promise<Acti
     if (isConflict(error)) {
       return conflictError('An account with this email already exists. Try logging in instead.')
     }
+    console.error('registerAction: account.create failed', error)
     return externalError('Failed to create account. Please try again.')
   }
 
+  let sessionSecret: string
   try {
     const session = await account.createEmailPasswordSession({
       email: data.email,
       password: data.password,
     })
-    client.setSession(session.secret)
+    sessionSecret = session.secret
     // Set the cookie the moment a session exists: everything past this
     // point is best-effort, and the next screen (unverified, with a
     // resend button) is the recovery path if any of it fails — leaving
     // the user on this form with no session would be a dead end instead,
     // since re-submitting would now hit the "email already exists" case.
-    writeSessionSecret(session.secret)
-  } catch {
+    writeSessionSecret(sessionSecret)
+  } catch (error) {
     // Account was created but we couldn't start a session for it. The user
     // can still finish via the login screen — the Auth user already exists.
+    console.error('registerAction: createEmailPasswordSession failed', error)
     return externalError('Account created, but signing you in failed. Please log in.')
   }
 
-  await account
+  // Switch to a plain session-scoped client (no API key) for everything
+  // else, same as every other action in this file.
+  const { account: userAccount } = createSessionAppwriteClient(sessionSecret)
+
+  await userAccount
     .updatePrefs<HauzUserPrefs>({
       prefs: {
         firstName: data.firstName,
@@ -75,9 +84,16 @@ export async function registerAction(data: RegistrationFormValues): Promise<Acti
         contactPhone: data.contactPhone ?? null,
       },
     })
-    .catch(() => undefined)
+    .catch((error: unknown) => {
+      console.error('registerAction: updatePrefs failed (best-effort, continuing)', error)
+    })
 
-  await account.createVerification({ url: `${env.VITE_APP_URL}/verify-email` }).catch(() => undefined)
+  // Best-effort by design (see comment above) — but a silent failure here
+  // means the user is left with no verification email and no error shown,
+  // so at minimum log it for server-side visibility.
+  await userAccount.createVerification({ url: `${env.VITE_APP_URL}/verify-email` }).catch((error: unknown) => {
+    console.error('registerAction: createVerification failed (best-effort, continuing)', error)
+  })
 
   return ok({ email: data.email })
 }
@@ -91,7 +107,8 @@ export async function resendVerificationAction(): Promise<ActionResult<null>> {
   try {
     await account.createVerification({ url: `${env.VITE_APP_URL}/verify-email` })
     return ok(null)
-  } catch {
+  } catch (error) {
+    console.error('resendVerificationAction: createVerification failed', error)
     return externalError('Failed to send verification email. Please try again shortly.')
   }
 }
@@ -113,12 +130,16 @@ export async function verifyEmailAction(data: {
     if (isUnauthorized(error)) {
       return validationError([], 'This verification link is invalid or has expired.')
     }
+    console.error('verifyEmailAction: updateVerification failed', error)
     return externalError('Failed to verify email. Please try again.')
   }
 }
 
 export async function loginAction(data: LoginFormValues): Promise<ActionResult<null>> {
-  const { account } = createSessionAppwriteClient()
+  const env = getServerEnv()
+  // API key only so createEmailPasswordSession returns a real secret (see
+  // src/env/server.ts).
+  const { account } = createSessionAppwriteClient(undefined, env.APPWRITE_API_KEY)
   try {
     const session = await account.createEmailPasswordSession({
       email: data.email,
@@ -130,6 +151,7 @@ export async function loginAction(data: LoginFormValues): Promise<ActionResult<n
     if (isUnauthorized(error)) {
       return validationError([], 'Incorrect email or password.')
     }
+    console.error('loginAction: createEmailPasswordSession failed', error)
     return externalError('Login failed. Please try again.')
   }
 }
@@ -158,7 +180,8 @@ export async function finishRegistrationAction(): Promise<ActionResult<{ account
       return validationError([], 'Please verify your email before finishing registration.')
     }
     prefs = user.prefs
-  } catch {
+  } catch (error) {
+    console.error('finishRegistrationAction: account.get failed', error)
     return externalError('Failed to load your account. Please try again.')
   }
 

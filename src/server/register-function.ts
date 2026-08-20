@@ -22,11 +22,17 @@ export async function invokeRegisterFunction(
   functionId: string,
   profile: RegistrationProfile,
 ): Promise<RegisterFunctionResult> {
-  const execution = await functions.createExecution({
-    functionId,
-    body: JSON.stringify(profile),
-    async: false,
-  })
+  let execution: Awaited<ReturnType<Functions['createExecution']>>
+  try {
+    execution = await functions.createExecution({
+      functionId,
+      body: JSON.stringify(profile),
+      async: false,
+    })
+  } catch (error) {
+    console.error('invokeRegisterFunction: createExecution failed', error)
+    return { ok: false, kind: 'external', message: 'Failed to reach the registration function' }
+  }
 
   let payload: unknown
   try {

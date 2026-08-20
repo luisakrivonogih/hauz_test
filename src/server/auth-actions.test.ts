@@ -33,6 +33,7 @@ vi.mock('@/env/server', () => ({
     APPWRITE_TABLE_PERSONAL_ACCOUNTS_ID: 'personal_accounts',
     APPWRITE_TABLE_PERSONAL_ROLES_ID: 'personal_roles',
     APPWRITE_FUNCTION_REGISTER_PERSONAL_ACCOUNT_ID: 'fn-1',
+    APPWRITE_API_KEY: 'test-api-key',
   }),
 }))
 
@@ -92,7 +93,7 @@ describe('auth actions', () => {
 
   describe('registerAction', () => {
     it('creates the account, starts a session, writes the cookie, and saves prefs + verification', async () => {
-      const { account, client } = mockAccount()
+      const { account } = mockAccount()
 
       const result = await registerAction(REGISTRATION_DATA)
 
@@ -100,7 +101,8 @@ describe('auth actions', () => {
       expect(account.create).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'ada@example.com', password: 'correct-horse', name: 'Ada Lovelace' }),
       )
-      expect(client.setSession).toHaveBeenCalledWith('session-secret')
+      expect(mockedCreateSessionAppwriteClient).toHaveBeenNthCalledWith(1, undefined, 'test-api-key')
+      expect(mockedCreateSessionAppwriteClient).toHaveBeenNthCalledWith(2, 'session-secret')
       expect(mockedWriteSessionSecret).toHaveBeenCalledWith('session-secret')
       expect(account.updatePrefs).toHaveBeenCalledWith({
         prefs: { firstName: 'Ada', lastName: 'Lovelace', role: 'consumer', contactPhone: null },
